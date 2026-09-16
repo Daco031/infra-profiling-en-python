@@ -5,67 +5,225 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Un push nuevo cancela el run anterior de la misma rama.
+concurrency:
+  group: pruebas-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  pruebas:
+  parte-1:
+    name: "Parte 1: cuatro perfiladores"
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Instalar dependencias
-        run: pip install -r requirements.txt
+        run: pip install -q -r requirements.txt
 
-      - name: El .gitignore deja por fuera el entorno y la caché
+      - name: Compilar, ejecutar y verificar
         run: |
-          test -f .gitignore || { echo "Falta el archivo .gitignore"; exit 1; }
-          grep -q "__pycache__" .gitignore || { echo ".gitignore no excluye __pycache__"; exit 1; }
-          grep -q -i "venv" .gitignore || { echo ".gitignore no excluye el entorno virtual"; exit 1; }
+          correr() {
+            test -f .gitignore || { echo "::error file=README.md,title=.gitignore::Falta el archivo .gitignore"; exit 1; }
+            grep -q "__pycache__" .gitignore || { echo "::error file=.gitignore,title=.gitignore::.gitignore no excluye __pycache__"; exit 1; }
+            grep -q -i "venv" .gitignore || { echo "::error file=.gitignore,title=.gitignore::.gitignore no excluye el entorno virtual"; exit 1; }
+            : > perfiladores.txt
+            for s in time_profile ctime_profile cprofile_profile pyinstrument_profile; do
+              salida=$(python -m scripts.$s | tail -1)
+              printf "%-22s %s\n" "$s" "$salida" | tee -a perfiladores.txt
+            done
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
+          while read -r s valor unidad; do
+            echo "$valor $unidad" | grep -Eq '^[0-9]+([.,][0-9]+)? ms$' || { echo "scripts/$s.py debe imprimir solo el tiempo en milisegundos, como '12.345 ms'"; exit 1; }
+          done < perfiladores.txt
+          test -s pyinstrument_results.html || { echo "pyinstrument_profile.py no dejo pyinstrument_results.html"; exit 1; }
+          echo "los cuatro scripts imprimen un tiempo y el informe HTML existe"
+          VERIFICAR
+          }
+          correr
+          salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=scripts/time_profile.py,title=Parte 1::$(echo "$salida" | tail -1)"; exit 1; }
+          echo "$salida"
 
-      - name: "Parte 1: los cuatro perfiladores miden e imprimen el tiempo"
+      - name: Resumen
+        if: always()
         run: |
-          for s in time_profile ctime_profile cprofile_profile pyinstrument_profile; do
-            echo "--- $s"
-            salida=$(python -m scripts.$s | tail -1)
-            echo "$salida"
-            echo "$salida" | grep -Eq '^[0-9]+([.,][0-9]+)? ms$' || { echo "scripts/$s.py debe imprimir solo el tiempo en milisegundos, como '12.345 ms'"; exit 1; }
-          done
-          test -s pyinstrument_results.html || { echo "pyinstrument_profile.py no dejó pyinstrument_results.html"; exit 1; }
+          { echo "### Parte 1: cuatro perfiladores"; echo '```'; cat perfiladores.txt 2>/dev/null || echo "sin salida de perfiladores.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: "Parte 2: la versión rápida da lo mismo"
-        run: python -m pytest tests/test_suma_primos.py -v
+  parte-2:
+    name: "Parte 2: leer el perfil y decidir"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt
 
-      - name: "Parte 2: y es al menos diez veces más rápida"
+      - name: Compilar, ejecutar y verificar
         run: |
-          python -m scripts.comparar | tee comparar.txt
+          correr() {
+            python -m pytest tests/test_suma_primos.py -v 2>&1 | tee pytest_primos.log && python -m scripts.comparar | tee comparar.txt
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
+          grep -q "passed" pytest_primos.log && ! grep -q "failed" pytest_primos.log || { echo "las pruebas de suma_primos_rapida no pasan"; exit 1; }
           factor=$(awk '$1 == "factor" {print $2}' comparar.txt)
           awk -v f="$factor" 'BEGIN { if (f + 0 < 10) { print "la version rapida solo es " f " veces mas rapida: el perfil apunta a otra cosa"; exit 1 } }'
+          echo "factor: $factor"
+          VERIFICAR
+          }
+          correr
+          if ! salida=$(verificar 2>&1); then
+            echo "$salida"; echo "::notice title=Parte 2::segunda corrida antes de marcar rojo"
+            correr
+            salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=src/suma_primos.py,title=Parte 2::$(echo "$salida" | tail -1)"; exit 1; }
+          fi
+          echo "$salida"
 
-      - name: "Parte 3: las tres formas del producto punto coinciden"
-        run: python -m pytest tests/test_vectores.py -v
-
-      - name: "Parte 3: y NumPy gana por al menos veinte"
+      - name: Resumen
+        if: always()
         run: |
-          python -m scripts.vectorizar | tee vectorizar.txt
+          { echo "### Parte 2: leer el perfil y decidir"; echo '```'; grep -E 'passed|failed' pytest_primos.log || true; cat comparar.txt 2>/dev/null || echo "sin salida de comparar.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  parte-3:
+    name: "Parte 3: el producto punto tres veces"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt
+
+      - name: Compilar, ejecutar y verificar
+        run: |
+          correr() {
+            python -m pytest tests/test_vectores.py -v 2>&1 | tee pytest_vectores.log && python -m scripts.vectorizar | tee vectorizar.txt
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
+          grep -q "passed" pytest_vectores.log && ! grep -q "failed" pytest_vectores.log || { echo "las pruebas de vectores no pasan"; exit 1; }
           factor=$(awk '$1 == "factor" {print $2}' vectorizar.txt)
           awk -v f="$factor" 'BEGIN { if (f + 0 < 20) { print "numpy solo es " f " veces mas rapido que el ciclo: revise que no quede un ciclo de Python adentro"; exit 1 } }'
+          echo "factor: $factor"
+          VERIFICAR
+          }
+          correr
+          if ! salida=$(verificar 2>&1); then
+            echo "$salida"; echo "::notice title=Parte 3::segunda corrida antes de marcar rojo"
+            correr
+            salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=src/vectores.py,title=Parte 3::$(echo "$salida" | tail -1)"; exit 1; }
+          fi
+          echo "$salida"
 
-      - name: "Parte 4: el producto punto con AVX"
-        run: make -C avx producto_punto
-
-      - name: "Parte 4: el resultado coincide y AVX gana por al menos tres"
+      - name: Resumen
+        if: always()
         run: |
+          { echo "### Parte 3: el producto punto tres veces"; echo '```'; grep -E 'passed|failed' pytest_vectores.log || true; cat vectorizar.txt 2>/dev/null || echo "sin salida de vectorizar.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  parte-4:
+    name: "Parte 4: AVX a mano"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt
+
+      - name: Compilar, ejecutar y verificar
+        run: |
+          correr() {
+            make -C avx producto_punto
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
           esc=$(awk '$1 == "escalar" {print $2}' avx/producto_punto.txt)
           avx=$(awk '$1 == "avx" {print $2}' avx/producto_punto.txt)
           r1=$(awk '$1 == "escalar" {print $NF}' avx/producto_punto.txt)
           r2=$(awk '$1 == "avx" {print $NF}' avx/producto_punto.txt)
           echo "escalar: ${esc} ms (${r1}), avx: ${avx} ms (${r2})"
           test "$r1" = "$r2" || { echo "las dos versiones no dan el mismo producto punto"; exit 1; }
-          awk -v e="$esc" -v a="$avx" 'BEGIN { if (a + 0 <= 0 || e / a < 3) { print "AVX no salio al menos tres veces mas rapido que el ciclo escalar"; exit 1 } }'
+          awk -v e="$esc" -v a="$avx" 'BEGIN { if (a + 0 <= 0 || e / a < 3) { print "AVX no salio al menos tres veces mas rapido que el ciclo escalar"; exit 1 } }' 
+          VERIFICAR
+          }
+          correr
+          if ! salida=$(verificar 2>&1); then
+            echo "$salida"; echo "::notice title=Parte 4::segunda corrida antes de marcar rojo"
+            correr
+            salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=avx/producto_punto.cpp,title=Parte 4::$(echo "$salida" | tail -1)"; exit 1; }
+          fi
+          echo "$salida"
 
-      - name: El análisis está escrito
+      - name: Resumen
+        if: always()
         run: |
+          { echo "### Parte 4: AVX a mano"; echo '```'; cat avx/producto_punto.txt 2>/dev/null || echo "sin salida de avx/producto_punto.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  analisis:
+    name: "Análisis escrito"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Instalar dependencias
+        run: pip install -q -r requirements.txt
+
+      - name: Compilar, ejecutar y verificar
+        run: |
+          correr() {
+            wc -w ANALISIS.md | tee analisis.txt
+          }
+          verificar() {
+            nucleos="$nucleos" bash -eo pipefail <<'VERIFICAR'
           palabras=$(wc -w < ANALISIS.md)
           test "$palabras" -ge 330 || { echo "ANALISIS.md tiene $palabras palabras: faltan tablas o explicaciones"; exit 1; }
+          VERIFICAR
+          }
+          correr
+          salida=$(verificar 2>&1) || { echo "$salida"; echo "::error file=ANALISIS.md,title=Análisis escrito::$(echo "$salida" | tail -1)"; exit 1; }
+          echo "$salida"
+
+      - name: Resumen
+        if: always()
+        run: |
+          { echo "### Análisis escrito"; echo '```'; cat analisis.txt 2>/dev/null || echo "sin salida de analisis.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  resumen:
+    name: Resumen
+    needs: [parte-1, parte-2, parte-3, parte-4, analisis]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Estado de las partes
+        run: |
+          estado() { case "$1" in success) echo "en verde";; failure) echo "en rojo";; *) echo "$1";; esac; }
+          verdes=0
+          for r in "${{ needs.parte-1.result }}" "${{ needs.parte-2.result }}" "${{ needs.parte-3.result }}" "${{ needs.parte-4.result }}" "${{ needs.analisis.result }}"; do
+            test "$r" = success && verdes=$((verdes + 1))
+          done
+          {
+            echo "## ${verdes} de 5 partes en verde"
+            echo
+            echo "| Parte | Estado |"
+            echo "|---|---|"
+            echo "| Parte 1: cuatro perfiladores | $(estado "${{ needs.parte-1.result }}") |"
+            echo "| Parte 2: leer el perfil y decidir | $(estado "${{ needs.parte-2.result }}") |"
+            echo "| Parte 3: el producto punto tres veces | $(estado "${{ needs.parte-3.result }}") |"
+            echo "| Parte 4: AVX a mano | $(estado "${{ needs.parte-4.result }}") |"
+            echo "| Análisis escrito | $(estado "${{ needs.analisis.result }}") |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "${verdes} de 5 partes en verde"

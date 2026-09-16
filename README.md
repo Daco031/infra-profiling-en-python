@@ -4,6 +4,8 @@ Infraestructuras Paralelas y Distribuidas
 Escuela de Ingeniería de Sistemas y Computación, Universidad del Valle
 Carlos Andrés Delgado Saavedra
 
+[![Pruebas](../../actions/workflows/pruebas.yml/badge.svg)](../../actions/workflows/pruebas.yml)
+
 Medir antes de optimizar, y después de medir, decidir. El ejercicio toma una
 función lenta a propósito, la mira con cuatro herramientas para ver qué dice
 cada una y qué cuesta usarla, arregla lo que el perfil señala, y termina donde
@@ -141,8 +143,16 @@ Silicon, esta parte solo corre en el servidor de Actions.
   al menos tres veces más rápida que el ciclo escalar.
 - Que `ANALISIS.md` tenga las tablas y las explicaciones.
 
+Cada parte es un job aparte: la lista de verificaciones del commit dice cuál
+quedó en verde y cuál no, y la pestaña del run trae un resumen con la salida
+de cada programa y el conteo de partes en verde. Cuando una verificación de
+tiempos falla, el flujo repite la corrida una vez antes de marcar rojo, y el
+error queda anotado sobre el archivo de esa parte. Un push nuevo cancela el
+run anterior.
+
 Los tiempos del registro son los de un servidor compartido; los que van en el
-análisis son los de su máquina.
+análisis son los de su máquina. Las pruebas de `pytest` se cortan a los dos
+minutos si algo se cuelga.
 
 ## Lo que hay que poder explicar
 

@@ -1,3 +1,4 @@
 pytest
 pyinstrument
 numpy
+pytest-timeout
