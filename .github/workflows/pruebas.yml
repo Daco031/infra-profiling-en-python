@@ -18,12 +18,54 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Ejecutar las pruebas
-        run: python -m pytest tests/ -v
-
-      - name: Ejecutar los perfiladores
+      - name: El .gitignore deja por fuera el entorno y la caché
         run: |
-          for s in scripts/*.py; do
+          test -f .gitignore || { echo "Falta el archivo .gitignore"; exit 1; }
+          grep -q "__pycache__" .gitignore || { echo ".gitignore no excluye __pycache__"; exit 1; }
+          grep -q -i "venv" .gitignore || { echo ".gitignore no excluye el entorno virtual"; exit 1; }
+
+      - name: "Parte 1: los cuatro perfiladores miden e imprimen el tiempo"
+        run: |
+          for s in time_profile ctime_profile cprofile_profile pyinstrument_profile; do
             echo "--- $s"
-            python "$s"
+            salida=$(python -m scripts.$s | tail -1)
+            echo "$salida"
+            echo "$salida" | grep -Eq '^[0-9]+([.,][0-9]+)? ms$' || { echo "scripts/$s.py debe imprimir solo el tiempo en milisegundos, como '12.345 ms'"; exit 1; }
           done
+          test -s pyinstrument_results.html || { echo "pyinstrument_profile.py no dejó pyinstrument_results.html"; exit 1; }
+
+      - name: "Parte 2: la versión rápida da lo mismo"
+        run: python -m pytest tests/test_suma_primos.py -v
+
+      - name: "Parte 2: y es al menos diez veces más rápida"
+        run: |
+          python -m scripts.comparar | tee comparar.txt
+          factor=$(awk '$1 == "factor" {print $2}' comparar.txt)
+          awk -v f="$factor" 'BEGIN { if (f + 0 < 10) { print "la version rapida solo es " f " veces mas rapida: el perfil apunta a otra cosa"; exit 1 } }'
+
+      - name: "Parte 3: las tres formas del producto punto coinciden"
+        run: python -m pytest tests/test_vectores.py -v
+
+      - name: "Parte 3: y NumPy gana por al menos veinte"
+        run: |
+          python -m scripts.vectorizar | tee vectorizar.txt
+          factor=$(awk '$1 == "factor" {print $2}' vectorizar.txt)
+          awk -v f="$factor" 'BEGIN { if (f + 0 < 20) { print "numpy solo es " f " veces mas rapido que el ciclo: revise que no quede un ciclo de Python adentro"; exit 1 } }'
+
+      - name: "Parte 4: el producto punto con AVX"
+        run: make -C avx producto_punto
+
+      - name: "Parte 4: el resultado coincide y AVX gana por al menos tres"
+        run: |
+          esc=$(awk '$1 == "escalar" {print $2}' avx/producto_punto.txt)
+          avx=$(awk '$1 == "avx" {print $2}' avx/producto_punto.txt)
+          r1=$(awk '$1 == "escalar" {print $NF}' avx/producto_punto.txt)
+          r2=$(awk '$1 == "avx" {print $NF}' avx/producto_punto.txt)
+          echo "escalar: ${esc} ms (${r1}), avx: ${avx} ms (${r2})"
+          test "$r1" = "$r2" || { echo "las dos versiones no dan el mismo producto punto"; exit 1; }
+          awk -v e="$esc" -v a="$avx" 'BEGIN { if (a + 0 <= 0 || e / a < 3) { print "AVX no salio al menos tres veces mas rapido que el ciclo escalar"; exit 1 } }'
+
+      - name: El análisis está escrito
+        run: |
+          palabras=$(wc -w < ANALISIS.md)
+          test "$palabras" -ge 330 || { echo "ANALISIS.md tiene $palabras palabras: faltan tablas o explicaciones"; exit 1; }
