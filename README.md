@@ -6,6 +6,10 @@ Carlos Andrés Delgado Saavedra
 
 [![Pruebas](../../actions/workflows/pruebas.yml/badge.svg)](../../actions/workflows/pruebas.yml)
 
+Lo que cada parte necesita de las bibliotecas y herramientas está en
+[DOCUMENTACION.md](DOCUMENTACION.md), con ejemplos que corren y los enlaces
+a la documentación oficial.
+
 Medir antes de optimizar, y después de medir, decidir. El ejercicio toma una
 función lenta a propósito, la mira con cuatro herramientas para ver qué dice
 cada una y qué cuesta usarla, arregla lo que el perfil señala, y termina donde
