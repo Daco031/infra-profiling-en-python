@@ -1,4 +1,4 @@
-# Profiling en Python
+# Profiling en Python e instrucciones AVX
 
 Infraestructuras Paralelas y Distribuidas
 Escuela de Ingeniería de Sistemas y Computación, Universidad del Valle
