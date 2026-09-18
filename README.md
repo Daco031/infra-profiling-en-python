@@ -23,6 +23,22 @@ del procesador.
 | 3 | `src/vectores.py` | El producto punto en tres formas: indexado, ciclo y NumPy |
 | 4 | `avx/producto_punto.cpp` | El mismo producto punto con instrucciones AVX, a mano |
 
+## Requisitos
+
+| Qué | Linux (Debian/Ubuntu) | macOS | Windows |
+|---|---|---|---|
+| Python 3.10 o más reciente, con `venv` y `pip` | `sudo apt install python3 python3-venv python3-pip` | `brew install python` o el instalador de python.org | instalador de python.org, marcando *Add python.exe to PATH* |
+| `numpy`, `pyinstrument`, `pytest` | `pip install -r requirements.txt` dentro del entorno virtual | igual | igual |
+| `g++` con AVX y `make`, solo para la parte 4 | `sudo apt install build-essential` | `xcode-select --install`, solo en Mac con procesador Intel | WSL2 con Ubuntu y el comando de Linux |
+
+Las partes 1 a 3 corren igual en los tres sistemas. La parte 4 usa
+instrucciones AVX, que son de procesadores x86-64: en un Mac con Apple
+Silicon no compila, y esa parte se comprueba solo con el flujo de Actions.
+En Windows la parte 4 va dentro de WSL2, que sí expone AVX.
+
+Cómo dejar cada sistema listo, paso a paso, está en
+[DOCUMENTACION.md](DOCUMENTACION.md), al final.
+
 ## Ambiente y dependencias
 
 ```bash
