@@ -8,6 +8,7 @@ def es_primo(num):
     return True
 
 
+
 def suma_primos(n):
     """Suma todos los primos menores que n."""
     return sum(i for i in range(2, n) if es_primo(i))
